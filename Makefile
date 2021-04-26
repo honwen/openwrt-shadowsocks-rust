@@ -15,6 +15,8 @@ PKG_RELEASE:=20210424
 PKG_LIBC:=musl
 ifeq ($(ARCH),arm)
 	PKG_LIBC:=musleabi
+else ifneq ($(filter ($(ARCH),arm),vfp vfpv2),)
+	PKG_LIBC:=musleabihf
 endif
 
 PKG_SOURCE:=shadowsocks-v$(PKG_VERSION).$(ARCH)-unknown-linux-$(PKG_LIBC).tar.xz
