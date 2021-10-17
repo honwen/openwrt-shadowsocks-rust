@@ -22,51 +22,84 @@ ifeq ($(ARCH),arm)
   endif
 endif
 
+PKG_ARCH=$(ARCH)
+ifeq ($(ARCH),i386)
+  PKG_ARCH:=i686
+endif
+
 PKG_SOURCE:=shadowsocks-v$(PKG_VERSION).$(ARCH)-unknown-linux-$(PKG_LIBC).tar.xz
 PKG_SOURCE_URL:=https://github.com/shadowsocks/shadowsocks-rust/releases/download/v$(PKG_VERSION)/
-PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)/$(BUILD_VARIANT)/$(PKG_NAME)-$(PKG_VERSION)-$(PKG_RELEASE)
 PKG_HASH:=skip
+
+PKG_MAINTAINER:=Tianling Shen <cnsztl@immortalwrt.org>
+PKG_LICENSE:=MIT
+PKG_LICENSE_FILES:=LICENSE
 
 include $(INCLUDE_DIR)/package.mk
 
-define Package/$(PKG_NAME)
-	SECTION:=net
-	CATEGORY:=Network
-	TITLE:=Lightweight Secured Socks5 Proxy - Rust.
-	URL:=https://github.com/shadowsocks/shadowsocks-rust
-endef
+define Package/shadowsocks-rust/Default
+  PKG_CONFIG_DEPENDS+=CONFIG_SHADOWSOCKS_RUST_$(1)_COMPRESS_UPX
+  
+  define Package/shadowsocks-rust-$(1)
+    SECTION:=net
+    CATEGORY:=Network
+    SUBMENU:=Web Servers/Proxies
+    TITLE:=shadowsocks-rust $(1)
+    URL:=https://github.com/shadowsocks/shadowsocks-rust
+    DEPENDS:=@(aarch64||arm||i386||mips||mipsel||x86_64) @USE_MUSL
+  endef
 
-define Package/$(PKG_NAME)/config
-	config SS_RUST_SERVER
-		depends on PACKAGE_shadowsocks-rust
-		bool "Build ssserver"
-	config SS_RUST_TOOLS
-		depends on PACKAGE_shadowsocks-rust
-		bool "Build ssurl/ssmanager"
-endef
+  define Package/$(PKG_NAME)/description
+	This is a port of shadowsocks.
+  endef
 
-define Package/$(PKG_NAME)/description
-This is a port of shadowsocks.
-endef
+  define Download/sha256sum
+	FILE:=$(PKG_SOURCE).sha256
+	URL_FILE:=$(FILE)
+	URL:=$(PKG_SOURCE_URL)
+	HASH:=skip
+  endef
+  
+  define Build/Prepare
+	mv $(DL_DIR)/$(PKG_SOURCE).sha256 .
+	cp $(DL_DIR)/$(PKG_SOURCE) .
+	shasum -a 256 -c $(PKG_SOURCE).sha256
+	rm $(PKG_SOURCE).sha256 $(PKG_SOURCE)
 
-define Build/Prepare
 	tar -C $(PKG_BUILD_DIR)/ -Jxf $(DL_DIR)/$(PKG_SOURCE)
+  endef
+
+  define Package/shadowsocks-rust-$(1)/config
+    config SHADOWSOCKS_RUST_$(1)_COMPRESS_UPX
+      bool "Compress $(1) with UPX"
+      default y
+  endef
+
+  define Package/shadowsocks-rust-$(1)/install
+	$$(INSTALL_DIR) $$(1)/usr/bin
+	$$(INSTALL_BIN) $$(PKG_BUILD_DIR)/$(1) $$(1)/usr/bin
+  endef
 endef
+
+PKG_CONFIG_DEPENDS:=
+SHADOWSOCKS_COMPONENTS:=sslocal ssmanager ssserver ssurl
+define shadowsocks-rust/templates
+  $(foreach component,$(SHADOWSOCKS_COMPONENTS),
+    $(call Package/shadowsocks-rust/Default,$(component))
+  )
+endef
+$(eval $(call shadowsocks-rust/templates))
 
 define Build/Compile
-	echo "$(PKG_NAME) Compile Skiped!"
+$(foreach component,$(SHADOWSOCKS_COMPONENTS),
+  ifneq ($(CONFIG_SHADOWSOCKS_RUST_$(component)_COMPRESS_UPX),)
+	$(STAGING_DIR_HOST)/bin/upx --lzma --best $(PKG_BUILD_DIR)/$(component)
+  endif
+)
 endef
 
-define Package/$(PKG_NAME)/install
-	$(INSTALL_DIR) $(1)/usr/bin
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/sslocal $(1)/usr/bin/
-ifeq ($(CONFIG_SS_RUST_SERVER),y)
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/ssserver $(1)/usr/bin/
-endif
-ifeq ($(CONFIG_SS_RUST_TOOLS),y)
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/ssurl $(1)/usr/bin/
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/ssmanager $(1)/usr/bin/
-endif
-endef
+$(foreach component,$(SHADOWSOCKS_COMPONENTS), \
+  $(eval $(call BuildPackage,shadowsocks-rust-$(component))) \
+)
 
-$(eval $(call BuildPackage,$(PKG_NAME)))
+$(eval $(call Download,sha256sum))
